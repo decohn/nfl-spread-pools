@@ -18,6 +18,7 @@ games using only these two features
 * I selected the models that performed best in testing, and will track their
 performance over the course of the season in
 [this spreadsheet](https://docs.google.com/spreadsheets/d/1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0/edit?usp=sharing)
+
 ## Rationale
 Ever since 2011, I've participated in two annual NFL pools in which entrants
 must pick the result of every regular-season game against the point spread.
