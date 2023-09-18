@@ -100,7 +100,7 @@ regression models, and support vector regressors, and will select a couple to
 use in the 2023 season.
 
 For more detail on the training, tuning, and testing of these models, please see
-[this](2023/model-training.Rmd) Rmd file, or view the knitted HTML file
+[this](https://github.com/decohn/nfl-spread-pools/blob/main/2023/model-training.Rmd) Rmd file, or view the knitted HTML file
 [here](https://decohn.github.io/nfl-spread-pools/2023/model-training.html).
 
 Each Thursday and Sunday morning during the 2023 regular season, I'll use the make_weekly_predictions.R script to predict the final scoring margin of each
