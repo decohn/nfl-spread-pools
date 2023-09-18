@@ -3,11 +3,13 @@
 Develop machine learning models to predict the final scoring margins of games in
 the 2023 NFL regular season.
 ## Synopsis
-* In one of the NFL spread pools that I participate in, the spreads are fixed on Tuesdays and it's possible to "key" three picks each week, making them each
+* In one of the NFL spread pools that I participate in, the spreads are fixed on
+Tuesdays and it's possible to "key" three picks each week, making them each
 worth two points instead of one
 
 * I wanted to develop a method of making my weekly picks that takes advantage of
-the difference between the "true" point spreads and these stale spreads and also incorporates DVOA Adjusted for Variation Early (DAVE), which is the best
+the difference between the "true" point spreads and these stale spreads and also
+incorporates DVOA Adjusted for Variation Early (DAVE), which is the best
 predictor of future NFL team performance that I've encountered
 
 * Using R, I
@@ -76,11 +78,12 @@ I don't need to exceed 52.4% accuracy here; I just need to do a little bit
 better, on average, than the other entrants in the pool.
 
 I've historically used DVOA Adjusted for Variation Early
-([DAVE](https://www.ftnfantasy.com/articles/FTN/104143/week-1-dvoa-dominant-dallas-cowboys)), a metric
-developed by Aaron Schatz, for this purpose. I've found it to be the most
-reliable publicly available predictor of a team's future performance, and I
+([DAVE](https://www.ftnfantasy.com/articles/FTN/104143/week-1-dvoa-dominant-dallas-cowboys)),
+a metric developed by Aaron Schatz, for this purpose. I've found it to be the
+most reliable publicly available predictor of a team's future performance, and I
 encourage reading more about it
-[here](https://www.ftnfantasy.com/articles/FTN/103241/dvoa-explainer) if you're interested. In past years I've often used a simple linear model to estimate
+[here](https://www.ftnfantasy.com/articles/FTN/103241/dvoa-explainer) if you're
+interested. In past years I've often used a simple linear model to estimate
 scoring margins based on the difference between the home team's and the road
 team's DAVE.
 
@@ -100,18 +103,23 @@ regression models, and support vector regressors, and will select a couple to
 use in the 2023 season.
 
 For more detail on the training, tuning, and testing of these models, please see
-[this](https://github.com/decohn/nfl-spread-pools/blob/main/2023/model-training.Rmd) Rmd file, or view the knitted HTML file
+[this](https://github.com/decohn/nfl-spread-pools/blob/main/2023/model-training.Rmd)
+Rmd file, or view the knitted HTML file
 [here](https://decohn.github.io/nfl-spread-pools/2023/model-training.html).
 
-Each Thursday and Sunday morning during the 2023 regular season, I'll use the make_weekly_predictions.R script to predict the final scoring margin of each
-game being played that day. These predictions will be stored within
-2023/weekly-predictions, and will guide my picks.  
+Each Thursday and Sunday morning during the 2023 regular season, I'll use the
+make_weekly_predictions.R
+[script](https://github.com/decohn/nfl-spread-pools/blob/main/make_weekly_predictions.R)
+to predict the final scoring margin of each game being played that day. These
+predictions will be stored within
+[2023/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2023/weekly-predictions),
+and will guide my picks.  
 
 ## Results
 The main spreadsheet that I use each week to make my picks is publicly available
-[here](https://docs.google.com/spreadsheets/d/1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0/edit?usp=sharing). It contains a
-"Predictor" sheet and an "Analyses" sheet, with the latter containing a summary
-of model performance.
+[here](https://docs.google.com/spreadsheets/d/1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0/edit?usp=sharing).
+It contains a "Predictor" sheet and an "Analyses" sheet, with the latter
+containing a summary of model performance.
 
 ### The "Predictor" sheet
 Here's a breakdown of the important columns of the "Predictor" sheet for the
