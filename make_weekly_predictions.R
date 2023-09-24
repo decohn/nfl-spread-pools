@@ -22,8 +22,7 @@ week <- argv$week
 
 gs4_deauth()
 weekly_games <- read_sheet(SHEET_IDS[[season]]) %>%
-  filter(Week == week, !is.na(`Final Betting Line`)) %>%
-  select(`Final Betting Line`, `DAVE Difference`)
+  filter(Week == week, !is.na(`Final Betting Line`))
 
 models <- glue("{season}/trained-models.rds") %>%
   read_rds()
@@ -31,10 +30,14 @@ models <- glue("{season}/trained-models.rds") %>%
 predictions_csv <- glue("{season}/weekly-predictions/week-{week}.csv")
 
 predictions <- map2(
-  models, names(models), ~ tibble("{.y}" := predict(.x, newdata = weekly_games))
+  models, names(models),
+  ~ tibble("{.y}" := round(predict(.x, newdata = weekly_games), digits = 2))
 ) %>%
-  bind_cols()
+  bind_cols() %>%
+  mutate(Road = weekly_games$Road, Home = weekly_games$Home) %>%
+  select(Road, Home, everything())
 
 write_csv(predictions, predictions_csv)
 
-glue("Predictions stored at {predictions_csv}")
+glue("Predictions stored at {predictions_csv}:")
+system2("cat", args = glue("{predictions_csv}"))
