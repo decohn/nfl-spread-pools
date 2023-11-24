@@ -7,6 +7,9 @@ suppressPackageStartupMessages({
   library(googlesheets4)
   library(argparser)
   library(glue)
+  library(caret)
+  library(ranger)
+  library(LiblineaR)
 })
 
 SHEET_IDS <- c("2023" = "1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0")
