@@ -1,0 +1,622 @@
+---
+title: "Training NFL Spread Pool Models for the 2024 Season"
+author: "David Cohn"
+date: "2024-09-06"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+here::i_am("2024/model-training.Rmd")
+library(here)
+library(tidyverse)
+library(googlesheets4)
+library(caret)
+library(glue)
+library(kableExtra)
+
+gs4_deauth()
+sheet_ids <- c(
+  "1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0", # 2023
+  "14ru_XVHaEVWGpQS5XME6QN96HxmbXrwshXulzNxePuw", # 2022
+  "1Zm5h8yhjY2RToeJ9zIWrV_SZPj6t6YPhK4JV9PZQAEI", # 2021
+  "11Mj7cSb9fqKFtnm2FHPBoxkZYfiE73YabahwNBI64TA"  # 2020
+)
+```
+
+My aim is to develop one or more regression models using the caret package that
+predict the point margin of NFL games based on a) their final point spread (as
+of Sunday morning, for most games), and b) the difference in DAVE between the
+two teams. See the README for more information on the rationale and methodology.
+
+The dataset that I have available for developing these models contains (almost)
+every game from the 2020, 2021, 2022, and 2023 NFL regular seasons. I used
+spreadsheets to record information about each game before making my picks in
+those years, including the final betting line and the difference in DAVE.
+I did switch to using Weighted DVOA in each season once that metric became
+available - usually around the midpoint of the season.
+
+I'll use the read_sheet() function from the googlesheets4 package to load the
+data from those Google sheets into R.
+
+```{r pull-data-from-google-sheets, message = FALSE}
+read_nfl_predictor_sheet <- function(sheet_id) {
+  sheet_data <- read_sheet(sheet_id) %>%
+    select(
+      `Week`, `OFP Line`, `Final Betting Line`, `DAVE Difference`, `Outcome`
+    ) %>%
+    filter(if_all(everything(), ~ !is.na(.x)))
+  
+  return(sheet_data)
+}
+
+game_data <- map(sheet_ids, read_nfl_predictor_sheet) %>%
+  bind_rows()
+
+game_data %>%
+  slice_head(n = 5) %>%
+  kbl(
+    align = rep("c", ncol(game_data)),
+    caption = 'Initial rows of the "game_data" table',
+    digits = 2,
+    col.names = c(
+      "Week", "Pool Spread", "Final Spread", "DAVE Difference", "Actual Margin"
+    )
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+I'll split this dataset 80/20 into training and test datasets. Because I used
+slightly different metrics at different points in the season, and because I
+expect the home-field advantage to vary over the course of the season, I'll
+ensure that the two datasets contain similar proportions of games from each
+week.
+
+```{r split-dataset}
+set.seed(508) # Brett Favre - career TD passes
+
+features <- select(game_data, `Final Betting Line`, `DAVE Difference`) %>%
+  as.data.frame()
+responses <- as.data.frame(game_data$Outcome)
+
+train_indices <- createDataPartition(game_data$Week, p = 0.8, list = FALSE)
+train_features <- features[train_indices, ]
+train_responses <- responses[train_indices]
+test_features <- features[-train_indices, ]
+test_responses <- responses[-train_indices]
+```
+
+Because points are scored in discrete chunks in football (typically 3 and 7), I
+don't anticipate the expected point margin in a game to be proportional to the
+difference in quality between the two teams. Thus I'll try training a non-linear
+model first, namely a random forest regression model.
+
+I'll tune the following hyperparameters using repeated 10-fold cross-validation:
+
+- mtry: the number of randomly chosen features that each node can choose from
+to split observations
+- min.node.size: the minimum number of observations that a node must contain for
+it to be split
+- splitrule: the method that each node uses to determine which breakpoint to use
+when splitting
+
+```{r define-random-forest-tuning-function}
+get_rf_cv_results <- function(n_trees, grid) {
+  rf_fit <- train(
+    x = train_features,
+    y = train_responses,
+    method = "ranger", 
+    trControl = trainControl(method = "repeatedcv", number = 10, repeats = 5),
+    tuneGrid = grid,
+    num.trees = n_trees
+  )
+  
+  rf_fit_results <- rf_fit$results %>%
+    mutate(num.trees = n_trees) %>%
+    select(num.trees, mtry, min.node.size, splitrule, RMSE)
+  
+  return(rf_fit_results)
+}
+```
+
+And now I can define a hyperparameter grid and proceed with the tuning.
+
+```{r tune-random-forest-model}
+rf_tuning_grid <- expand.grid(
+  mtry = 1:2, 
+  min.node.size = seq(from = 1, by = 2, to = 15),
+  splitrule = c("variance", "extratrees", "maxstat")
+)
+
+rf_hyperparam_opt_results <-
+  get_rf_cv_results(n_trees = 100, grid = rf_tuning_grid)
+
+slice_min(rf_hyperparam_opt_results, order_by = RMSE, n = 10) %>%
+  kbl(
+    align = rep("c", ncol(rf_hyperparam_opt_results)),
+    caption = 'Random forest hyperparameter tuning results',
+    digits = 3
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+Well, it's pretty clear that it's optimal to have mtry = 1 and
+splitrule = maxstat. Changes to min.node.size don't seem to substantially impact
+the RMSE, so I'll just use the default value for regression random forests,
+which is 5.
+
+With those hyperparameters set, I'll now tune the number of trees grown for the
+model.
+
+```{r tune-rf-num-trees}
+rf_chosen_hyperparameters <- expand.grid(
+  mtry = 1,
+  min.node.size = 5,
+  splitrule = "maxstat"
+)
+num_trees_tuning_values <- seq(from = 50, by = 50, to = 750)
+
+rf_results_by_n_trees <- map(
+  num_trees_tuning_values, get_rf_cv_results, grid = rf_chosen_hyperparameters
+) %>%
+  bind_rows()
+
+ggplot(rf_results_by_n_trees) +
+  geom_point(mapping = aes(x = num.trees, y = RMSE)) +
+  ggtitle("Maxstat random forest regressor: RMSE vs. Number of trees")
+```
+
+We're dealing with very small variations in RMSE, but you could probably make
+an argument that the RMSE is consistently better with num.trees >= 250, so
+I'll set num.trees equal to 250.
+
+With all of the hyperparameters set, I can now train the final random forest
+regressor.
+
+```{r train-rf-maxstat-model}
+rf_maxstat_model <- train(
+  x = train_features,
+  y = train_responses,
+  method = "ranger", 
+  trControl = trainControl(method = "none"),
+  tuneGrid = rf_chosen_hyperparameters,
+  num.trees = 250
+)
+```
+
+I'll also train a random forest regressor that uses the "variance" splitrule. It
+wasn't the optimal choice, but it is the default option, and I'm curious to see
+how it performs in comparison to our "maxstat" regressor.
+
+I'll first check what the optimal hyperparameters for that regressor are.
+
+```{r choose-rf-variance-hyperparameters}
+rf_hyperparam_opt_results %>%
+  filter(splitrule == "variance") %>%
+  slice_min(order_by = RMSE, n = 10) %>%
+  kbl(
+    align = rep("c", ncol(rf_hyperparam_opt_results)),
+    caption = 'Random forest hyperparameter tuning results ("variance" only)',
+    digits = 3
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+It still appears that mtry = 1 is optimal. This time though there's a steady
+decrease in the RMSE as min.node.size is increased, so I'll try the largest
+value: min.node.size = 15.
+
+With those hyperparameters set, I'll now tune the number of trees grown for the
+model.
+
+```{r tune-variance-rf-num-trees}
+variance_rf_chosen_hyperparameters <- expand.grid(
+  mtry = 1,
+  min.node.size = 15,
+  splitrule = "variance"
+)
+
+variance_rf_results_by_n_trees <- map(
+  num_trees_tuning_values, get_rf_cv_results,
+  grid = variance_rf_chosen_hyperparameters
+) %>%
+  bind_rows()
+
+ggplot(variance_rf_results_by_n_trees) +
+  geom_point(mapping = aes(x = num.trees, y = RMSE)) +
+  ggtitle("Variance random forest regressor: RMSE vs. Number of trees")
+```
+
+Again, there's no real clear pattern of decrease in RMSE as num.trees increases,
+but it does look like avoiding num.trees = 50 might be wise. Let's grow 100
+trees.
+
+I can now train the final "variance" random forest regressor.
+
+```{r train-rf-variance-model}
+rf_variance_model <- train(
+  x = train_features,
+  y = train_responses,
+  method = "ranger", 
+  trControl = trainControl(method = "none"),
+  tuneGrid = variance_rf_chosen_hyperparameters,
+  num.trees = 100
+)
+```
+
+While there are reasons to expect the relationship between relative team quality
+and final scoring margin to be non-linear, it seems reasonably likely that the
+dataset is not going to be large enough to train models that can accurately
+capture that non-linearity. There's a risk that non-linear models will instead
+overfit to noise, and so this provides a rationale to also try training linear
+models, as they should be more robust to this type of overfitting.
+
+I'll start by training a group of basic linear regression models:
+
+- one that uses only the difference in DAVE between teams
+- one that uses only the final point spread of the game
+- one that uses both of these features
+
+```{r train-linear-regression-models}
+training_set <- game_data[train_indices, ]
+
+dave_only_lm <- lm(Outcome ~ `DAVE Difference`, training_set)
+line_only_lm <- lm(Outcome ~ `Final Betting Line`, training_set)
+dave_and_line_lm <- lm(
+  Outcome ~ `Final Betting Line` + `DAVE Difference`, training_set
+)
+```
+
+I'll also train a couple of support vector regression (SVR) models. The caret
+package includes both the svmLinear2 and svmLinear3 models, so I'll try both,
+starting with svmLinear2.
+
+There are two hyperparameters to tune here:
+- cost: the size of the penalty associated with incorrect estimations of
+outcomes within the training dataset. In other words, a larger cost will cause
+the model to fit more tightly to the training dataset, while a smaller cost will
+have the opposite effect.
+- svr_eps: defines a tolerance margin - errors of less than this amount will
+not contribute to the total loss
+
+```{r tune-svmLinear2-regression-model}
+tune_svm2_with_epsilon <- function(epsilon) {
+  svm2_cv <- train(
+    x = train_features,
+    y = train_responses,
+    method = "svmLinear2", 
+    trControl = trainControl(method = "repeatedcv", number = 10, repeats = 5),
+    tuneGrid = expand.grid(cost = seq(from = 0.25, by = 0.25, to = 1.5)),
+    svr_eps = epsilon
+  )
+  
+  svm2_cv_results <- svm2_cv$results %>%
+    mutate(svr_eps = epsilon) %>%
+    select(cost, svr_eps, RMSE)
+  
+  return(svm2_cv_results)
+}
+
+svr_eps_grid <- c(0.02, 0.1, 0.5, 1, 2)
+
+svm2_tuning_results <- map(svr_eps_grid, tune_svm2_with_epsilon) %>%
+  bind_rows()
+
+svm2_tuning_results %>%
+  slice_min(order_by = RMSE, n = 10) %>%
+  kbl(
+    align = rep("c", ncol(svm2_tuning_results)),
+    caption = 'svm2Linear hyperparameter tuning results',
+    digits = 3
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+We're really splitting hairs here, but it looks like the cross-validation RMSE
+is minimized when cost = 0.25 and svr_eps = 1, so I'll use those values to
+train the final svmLinear2 model.
+
+```{r train-svmLinear2-regression-model}
+svm2_model <- train(
+  x = train_features,
+  y = train_responses,
+  method = "svmLinear2", 
+  trControl = trainControl(method = "none"),
+  tuneGrid = expand.grid(cost = 0.25),
+  svr_eps = 1
+)
+```
+
+Now I can move on to an svmLinear3 model, which will be the last model that I
+train.
+
+In addition to the cost and svr_eps hyperparameters, this model has one other:
+
+- Loss: either L1 (sum of absolute residuals) or L2 (sum of squared residuals).
+Since we're seeking to minimize RMSE in all of our other models, let's just
+choose to always use an L2 loss function here, rather than tuning the
+hyperparameter.
+
+```{r tune-svmLinear3-regression-model}
+tune_svm3_with_epsilon <- function(epsilon) {
+  svm3_cv <- train(
+    x = train_features,
+    y = train_responses,
+    method = "svmLinear3", 
+    trControl = trainControl(method = "repeatedcv", number = 10, repeats = 5),
+    tuneGrid = expand.grid(
+      cost = seq(from = 0.25, by = 0.25, to = 1.5), Loss = "L2"
+    ),
+    svr_eps = epsilon
+  )
+  
+  svm3_cv_results <- svm3_cv$results %>%
+    mutate(svr_eps = epsilon) %>%
+    select(cost, svr_eps, RMSE)
+  
+  return(svm3_cv_results)
+}
+
+svr_eps_grid <- c(0.02, 0.1, 0.5, 1, 2)
+
+svm3_tuning_results <- map(svr_eps_grid, tune_svm3_with_epsilon) %>%
+  bind_rows()
+
+svm3_tuning_results %>%
+  slice_min(order_by = RMSE, n = 10) %>%
+  kbl(
+    align = rep("c", ncol(svm3_tuning_results)),
+    caption = 'svm3Linear hyperparameter tuning results',
+    digits = 3
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+The lowest RMSE comes about when cost = 0.25 and svr_eps = 1, so I'll use
+those values to train the final version of this model.
+
+```{r train-svmLinear3-regression-model}
+svmlinear3_chosen_hyperparameters <- expand.grid(cost = 0.25, Loss = "L2")
+
+svm3_model <- train(
+  x = train_features,
+  y = train_responses,
+  method = "svmLinear3", 
+  trControl = trainControl(method = "none"),
+  tuneGrid = svmlinear3_chosen_hyperparameters,
+  svr_eps = 1
+)
+```
+
+I now have a set of seven different models - two random forest regression
+models, three linear regression models, and two support vector regressors.
+
+```{r collect-models}
+models <- list(
+  "DAVE LM" = dave_only_lm, "Spread LM" = line_only_lm,
+  "DAVE + Spread LM" = dave_and_line_lm, "Maxstat RF" = rf_maxstat_model,
+  "Variance RF" = rf_variance_model, "SVM2" = svm2_model, "SVM3" = svm3_model
+)
+```
+
+Before I test them on our test dataset, I'll use each model to make predictions
+on some fake data that spans a wide range of point spreads and DAVE differences.
+
+```{r test-model-on-fake-data}
+mock_spreads <- seq(from = -10.5, by = 3, to = 10.5)
+mock_DAVE_differences <- seq(from = -0.6, by = 0.001, to = 0.6)
+mock_data <- crossing(mock_spreads, mock_DAVE_differences) %>%
+  rename(
+    `Final Betting Line` = mock_spreads,
+    `DAVE Difference` = mock_DAVE_differences
+  )
+
+assess_model_on_mock_data <- function(model, model_name) {
+  mock_predictions <- mock_data %>%
+    mutate(prediction = predict(model, newdata = mock_data))
+
+  assessment <- ggplot(
+    mock_predictions,
+    mapping = aes(
+      x = `DAVE Difference`,
+      y = prediction,
+      color = as.factor(`Final Betting Line`)
+    )
+  ) +
+    geom_line() +
+    scale_color_brewer(type = "qual") +
+    labs(
+      title = glue("{model_name} predictions on mock data"),
+      y = "Predicted scoring margin",
+      color = "Final point spread"
+    )
+  
+  print(assessment)
+}
+
+walk2(models, names(models), assess_model_on_mock_data)
+```
+
+For the most part these models are doing what I'd expect them to, but there are
+a couple of things that are worth noting.
+
+As I also saw in 2023's model training, the random forest models really appear
+to be overfit. Their predicted scoring margin isn't even close to being a
+monotonic function of the DAVE difference (or of the final point spread), and
+there are areas where small changes in the DAVE difference cause the predicted
+scoring margin to spike. That being said, the maxstat random forest model
+certainly appears to be *less* of an overfit mess than the variance random
+forest model. I guess our tuning worked!
+
+Fortunately, the SVM2 model looks quite a bit better this year than it did last
+year, probably because I remembered to tune its epsilon parameter this time. In
+comparison to the SVM3 model, it thinks that DAVE difference has a relatively
+small impact on scoring margin. While I'm skeptical of that, it's at least a
+plausible opinion.
+
+Next, I'll take a look at how each of these models performs on the
+**training** dataset. This will give me some further insight into whether any of
+the models are likely to be overfit, and whether any of them have picked up
+tendencies that are likely to diminish their predictive power (e.g. having a
+strong bias for or against home teams or favourites).
+
+```{r report-model-stats-on-training-dataset}
+report_model_stats_on_dataset <- function(model, name, dataset) {
+  dataset <- mutate(
+    dataset,
+    prediction = predict(model, dataset),
+    line_movement = `Final Betting Line` - `OFP Line`,
+    picked_home = prediction > `OFP Line`,
+    picked_favourite = (picked_home == (`OFP Line` > 0)),
+    picked_line_movement = if_else(
+      line_movement != 0, picked_home == (line_movement > 0), NA
+    ),
+    picked_correctly = (picked_home == (Outcome > `OFP Line`))
+  )
+  
+  overall_win_rate <- mean(dataset$picked_correctly)
+  home_pick_rate <- mean(dataset$picked_home)
+  home_pick_win_rate <- dataset %>%
+    filter(picked_home) %>%
+    pull(picked_correctly) %>%
+    mean()
+  favourite_pick_rate <- mean(dataset$picked_favourite)
+  favourite_pick_win_rate <- dataset %>%
+    filter(picked_favourite) %>%
+    pull(picked_correctly) %>%
+    mean()
+  movement_pick_rate <- mean(dataset$picked_line_movement, na.rm = TRUE)
+  movement_pick_win_rate <- dataset %>%
+    filter(picked_line_movement) %>%
+    pull(picked_correctly) %>%
+    mean()
+  no_movement_win_rate <- dataset %>%
+    filter(line_movement == 0) %>%
+    pull(picked_correctly) %>%
+    mean()
+  
+  return(
+    tibble(
+      name, overall_win_rate, home_pick_rate, home_pick_win_rate,
+      favourite_pick_rate, favourite_pick_win_rate, movement_pick_rate,
+      movement_pick_win_rate, no_movement_win_rate
+    )
+  )
+}
+
+model_performance_on_training_set <- map2(
+  models, names(models), report_model_stats_on_dataset, dataset = training_set
+) %>%
+  bind_rows() 
+
+model_performance_on_training_set %>%
+  kbl(
+    align = rep("c", ncol(model_performance_on_training_set)),
+    caption = "Performance of all models on the training set",
+    digits = 3,
+    col.names = c(
+      "Model", "Win rate", "Home pick rate", "Win rate (picking home teams)",
+      "Favourite pick rate", "Win rate (picking favourites)",
+      "Line movement pick rate", "Win rate (picking with line movement)",
+      "Win rate (no line movement)")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+This largely confirms what I saw before. The two RF models have unrealistically
+high win rates on the training set, with the variance RF being worse, which
+suggests overfitting. The other models all achieve more reasonable win rates and
+have a stronger bias towards picking teams with favourable line movement (save
+for the DAVE-only model), which is encouraging.
+
+Based on these stats and the mock data predictions, I'm expecting either the
+DAVE + Spread linear model or the SVM3 model (which are the two models I used
+last year) to have the best performance on the test data. Time to find out!
+
+```{r report-model-stats-on-test-dataset}
+test_set <- game_data[-train_indices, ]
+
+model_performance_on_test_set <- map2(
+  models, names(models), report_model_stats_on_dataset, dataset = test_set
+) %>%
+  bind_rows()
+
+model_performance_on_test_set %>%
+  kbl(
+    align = rep("c", ncol(model_performance_on_test_set)),
+    caption = "Performance of all models on the test set",
+    digits = 3,
+    col.names = c(
+      "Model", "Win rate", "Home pick rate", "Win rate (picking home teams)",
+      "Favourite pick rate", "Win rate (picking favourites)",
+      "Line movement pick rate", "Win rate (picking with line movement)",
+      "Win rate (no line movement)")
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+My first takeaway here is that the maxstat RF model is performing surprisingly
+well, though not as well as in last year's model development, where it was
+somehow at > 60% in the test set. Still, I don't trust a model that is that
+clearly overfit.
+
+Unfortunately, none of the other models look great this time around either. One
+notable trend is that they've almost all swung towards picking far more 
+home teams and far more favourites. From the 2023 to 2024 model versions,
+DAVE + Spread, for example, went from 36% to 61% home teams and 34% to 60%
+favourites. The model's win rate on favourites declined from 53% to 46%, and
+its overall performance cratered from 53% to 51%.
+
+2023 did end up being a good year for favourites (53.5% cover rate), and an ok
+one for home teams (50.9% cover rate), but I'm still surprised that introducing
+one additional year of data caused such large shifts in the models. I suppose
+I also chose different hyperparameters for some of the models, but that doesn't
+explain the changes to the DAVE + Spread LM.
+
+It's extremely weird to see that all of the models that use the final point
+spread are somehow winning at under a 50% rate when they pick with line
+movement. In 2023 training, the SVM3 model had a 58% win rate in that situation.
+In the actual 2023 regular season, picking with line movement would have
+yielded a 55.6% cover rate. This is strange, and especially so for the Spread
+LM, which doesn't even look at any other variable!
+
+Let's take a closer look at what's happening to the linear models:
+```{r examine-linear-models}
+models[c("DAVE LM", "Spread LM", "DAVE + Spread LM")]
+```
+
+Here's last year's DAVE + Spread LM, for comparison:
+```{r examine-2023-lm}
+models_2023 <- here("2023/trained-models.rds") %>% read_rds()
+names(models_2023) <- c("DAVE + Spread LM 2023", "SVM3 2023", "Maxstat RF 2023")
+models_2023["DAVE + Spread LM 2023"]
+```
+ 
+Relative to last year's model, this year's has about a half-point of extra
+home-field advantage and places a much higher weight on the final betting line.
+These changes would be expected to slant the model more towards favourites and
+towards home teams, which matches the results from the test dataset.
+
+Given how strangely this year's models have turned out, I'm going to track some
+of the 2023 models as well this year, and still take them into account when
+making picks.
+ 
+```{r save-chosen-models}
+chosen_models <- c(
+  models[c("DAVE LM", "DAVE + Spread LM", "SVM3")],
+  models_2023[c("DAVE + Spread LM 2023", "SVM3 2023")])
+write_rds(chosen_models, here("2024", "trained-models.rds"))
+```
