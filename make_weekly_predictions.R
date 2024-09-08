@@ -12,7 +12,10 @@ suppressPackageStartupMessages({
   library(LiblineaR)
 })
 
-SHEET_IDS <- c("2023" = "1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0")
+SHEET_IDS <- c(
+  "2023" = "1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0",
+  "2024" = "1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI"
+)
 
 p <- arg_parser("Make weekly NFL predictions using previously trained models.")
 p <- add_argument(p, "season", help = "The season to make predictions for.")
