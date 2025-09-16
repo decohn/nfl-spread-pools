@@ -14,7 +14,8 @@ suppressPackageStartupMessages({
 
 SHEET_IDS <- c(
   "2023" = "1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0",
-  "2024" = "1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI"
+  "2024" = "1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI",
+  "2025" = "19EcIMy3SI9OcOJ6cSzHigufCkOG7_MDhou8Ge8xSZG8"
 )
 
 p <- arg_parser("Make weekly NFL predictions using previously trained models.")

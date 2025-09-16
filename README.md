@@ -1,7 +1,7 @@
 # nfl-spread-pools
 ## Aim
 Develop machine learning models to predict the final scoring margins of games in
-the 2023 and 2024 NFL regular seasons.
+the 2023, 2024, and 2025 NFL regular seasons.
 ## Synopsis
 * In one of the NFL spread pools that I participate in, the spreads are fixed on
 Tuesdays and it's possible to "key" three picks each week, making them each
@@ -14,14 +14,16 @@ predictor of future NFL team performance that I've encountered
 
 * Using R, I trained a number of machine learning models to predict the final
 scoring margin of
-[2023](https://decohn.github.io/nfl-spread-pools/2023/model-training.html) and
-[2024](https://decohn.github.io/nfl-spread-pools/2024/model-training.html) NFL
-games using only these two features
+[2023](https://decohn.github.io/nfl-spread-pools/2023/model-training.html),
+[2024](https://decohn.github.io/nfl-spread-pools/2024/model-training.html), and
+[2025](https://decohn.github.io/nfl-spread-pools/2025/model-training.html)
+NFL games using only these two features
 
 * I selected the models that performed best in testing, and will track their
 performance over the course of the season in spreadsheets:
 [2023](https://docs.google.com/spreadsheets/d/1dVnTsDZvxPkLAsYW6SPb1tOTNHe2bxtRAAwpPIAYwj0/edit?usp=sharing)
-and [2024](https://docs.google.com/spreadsheets/d/1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI/edit?usp=sharing).
+,[2024](https://docs.google.com/spreadsheets/d/1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI/edit?usp=sharing),
+and [2025](https://docs.google.com/spreadsheets/d/19EcIMy3SI9OcOJ6cSzHigufCkOG7_MDhou8Ge8xSZG8/edit?usp=sharing).
 
 ## Rationale
 Ever since 2011, I've participated in two annual NFL pools in which entrants
@@ -96,46 +98,48 @@ several more formal and complex models that will integrate both the final point
 spread and the DAVE difference to predict final scoring margins. We'll find out
 if they can put me back on the podium.
 
-Using the new models, 2023 turned out to be a good, but not great year (11th
-out of 79 pool participants). I'll be running back the same types of models for
-2024, with the benefit of an extra year of training data. Hopefully they have
-a stronger performance this time around!
+Using the new models, 2023 and 2024 turned out to be good, but not great years
+(11th out of 79 pool participants and 21st out of 83 participants). I'll be
+running back the same types of models for 2025, with the benefit of an extra
+year of training data. Hopefully they have a stronger performance this time
+around!
 
 ## Methodology
-Briefly, I'll use data from the 2020, 2021, 2022, and 2023 NFL regular seasons
-to develop machine learning models that predict a game's scoring margin based on
-a) the final point spread, and b) the difference in DAVE between the two teams.
-I'll try several types of models, namely random forest regressors, linear
-regression models, and support vector regressors, and will select a couple to
-use in the 2023 and 2024 seasons. Data from the 2023 regular season is only
-being used to train the 2024 model, of course.
+Briefly, I'll use data from the 2020, 2021, 2022, 2023, and 2024 NFL regular
+seasons to develop machine learning models that predict a game's scoring margin
+based on a) the final point spread, and b) the difference in DAVE between the
+two teams. I'll try several types of models, namely random forest regressors,
+linear regression models, and support vector regressors, and will select a
+couple to use in the 2023, 2024, and 2025 seasons. Data from the 2023 regular
+season is only being used to train the 2024 and 2025 models, of course.
 
 For more detail on the training, tuning, and testing of these models, please see
-[this](https://github.com/decohn/nfl-spread-pools/blob/main/2024/model-training.Rmd)
+[this](https://github.com/decohn/nfl-spread-pools/blob/main/2025/model-training.Rmd)
 Rmd file, or view the knitted HTML file
-[here](https://decohn.github.io/nfl-spread-pools/2024/model-training.html).
+[here](https://decohn.github.io/nfl-spread-pools/2025/model-training.html).
 
-Each Thursday and Sunday morning during the 2023 and 2024 regular seasons, I'll
-use the make_weekly_predictions.R
+Each Thursday and Sunday morning during the 2023, 2024, and 2025 regular
+seasons, I'll use the make_weekly_predictions.R
 [script](https://github.com/decohn/nfl-spread-pools/blob/main/make_weekly_predictions.R)
 to predict the final scoring margin of each game being played that day. These
 predictions will be stored within
-[2023/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2023/weekly-predictions)
-and [2024/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2024/weekly-predictions),
+[2023/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2023/weekly-predictions),
+[2024/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2024/weekly-predictions),
+and [2025/weekly-predictions](https://github.com/decohn/nfl-spread-pools/tree/main/2025/weekly-predictions),
 and will guide my picks.
 
 ## Results
 The main spreadsheet that I use each week to make my picks is publicly available
-[here](https://docs.google.com/spreadsheets/d/1JBq1UFqZq2qJ4yNGzO1uhW1N025U4mpf9HskR_mAEJI/edit?usp=sharing).
+[here](https://docs.google.com/spreadsheets/d/19EcIMy3SI9OcOJ6cSzHigufCkOG7_MDhou8Ge8xSZG8/edit?usp=sharing).
 It contains a "Predictor" sheet and an "Analyses" sheet, with the latter
 containing a summary of model performance.
 
 ### The "Predictor" sheet
 Here's a breakdown of the important columns of the "Predictor" sheet for the
-2024 season, insofar as the machine learning models are concerned:
-* **OFP Line**: the Tuesday point spread that pool participants are picking
-against, from the perspective of the road team (i.e. negative spreads indicate
-that the road team is favoured)
+2025 season, insofar as the machine learning models are concerned:
+* **GG Line**: the point spread that pool participants are picking against, from
+the perspective of the road team (i.e. negative spreads indicate that the road
+team is favoured)
 
 * **Final Betting Line**: the Vegas point spread as of shortly before the pool's
 pick deadline (kickoff for all games played on Thursday, Friday, or Saturday,
@@ -145,11 +149,11 @@ and 10:00 am Pacific Time on Sunday for all other games)
 team. Once DAVE is no longer available (after roughly Week 13), weighted DVOA is
 used instead.
 
-* **Linear Model, SVM Model, and Maxstat RF Model**: the predicted difference in
-points between the home and road teams, according to the specified model.
-Negative numbers indicate that the road team is projected to win. See
-[here](https://decohn.github.io/nfl-spread-pools/2024/model-training.html) for
-details on how these models were developed and selected.
+* **2025 Linear Model, 2025 SVM2, 2025 SVM3, 2023 Linear Model, 2023 SVM3**: the
+predicted difference in points between the home and road teams, according to the
+specified model. Negative numbers indicate that the road team is projected to
+win. See [here](https://decohn.github.io/nfl-spread-pools/2025/model-training.html)
+for details on how these models were developed and selected.
 
 This sheet contains a number of other metrics that aren't relevant either to the
 models' predictions or performance. They largely reflect alternative prediction
@@ -158,13 +162,13 @@ but am not currently using. I'm just interested in tracking their performance.
 
 ### The "Analyses" sheet
 This sheet records the performance of different prediction methods over each
-week of the 2024 NFL regular season. The rows labelled "Linear Model",
-"SVM Model", and "RF Model" represent the machine learning models discussed
-above. All other rows either track basic data (e.g. the rate at which favourites
-are covering the spread) or track the performance of alternative methods.
+week of the 2025 NFL regular season. The rows whose labels include "LM" or "SVM"
+represent the machine learning models discussed above. All other rows either
+track basic data (e.g. the rate at which favourites are covering the spread) or
+track the performance of alternative methods.
 
-The rows labelled "OFP Picks" and "Yahoo Picks" track my personal performance in
+The rows labelled "GG Picks" and "Yahoo Picks" track my personal performance in
 the two NFL spread pools, with the former pool being the one discussed
 extensively above, with Tuesday point spreads and "key" picks. The rows labelled
-"OFP Median" and "Yahoo Median" track the performance of the median participant
+"GG Median" and "Yahoo Median" track the performance of the median participant
 each week in each pool.
